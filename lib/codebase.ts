@@ -1,0 +1,642 @@
+const quickstart = `// define a function
+fn add(x, y) {
+    // function must have a return value
+    x + y
+}
+
+fn main(args) {
+    print = std::io::print;
+
+    // if-else can have a return value
+    one = if true {
+        1
+    } else 2;
+    print("one:", one);
+
+    // break a loop with a return value
+    two = loop {
+        break 2;
+    };
+    print("two:", two);
+
+    // for-loop is only applicable to list
+    ten = 0;
+    for (a, b) in [(1, 2), (3, 4)] {
+        ten += a + b;
+    }
+    print("ten:", ten);
+
+    // logical operators
+    total = 0;
+    if one == 1 and two == 2 and ten == 10 and true {
+        total = one + two + ten;
+    } else {
+        return "unreachable";    
+    }
+    print("thirteen:", total);
+    
+    // while-loop
+    while total > 5 {
+        if total == 8 {
+            total -= 5;
+            continue;
+        }
+        total -= 1;
+    }
+    print("three:", total);
+
+    // exit object
+    total + add(one, two)
+}
+`;
+
+const grouping = `group Vec3(x, y, z);
+
+// methods are not zero-cost abstraction because of dynamic typing
+impl Vec3 {
+    fn new(x, y, z) {
+        Vec3(x, y, z)
+    }
+
+    fn add(self, other) {
+        Vec3(
+            self.x + other.x,
+            self.y + other.y,
+            self.z + other.z,
+        )
+    }
+
+    fn mul(self, other) {
+        Vec3(
+            self.x * other,
+            self.y * other,
+            self.z * other,
+        )
+    }
+
+    fn display(self) {
+        std::io::print("<", self.x, self.y, self.z, ">")
+    }
+}
+
+fn main(args) {
+    location = Vec3::new(1, 1, 1).mul(3);
+    other = Vec3::new(1, -2, -3);
+    location.add(other).display()
+}
+`;
+
+const fibonacci = `fn fib(n) {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+fn main(args) {
+    fib(10)
+}
+`;
+
+const autograd = `// fully-connected feedforward
+group Linear(w, b);
+
+impl Linear {
+    fn define(input, output) {
+        Linear([input, output], [output])
+    }
+
+    fn fill(x) {
+        Linear(x, x)
+    }
+
+    fn forward(self, x) {
+        x @ self.w + self.b
+    }
+}
+
+// multi-layer perceptron, with one hidden layer and ReLU activation
+group MLP(fc1, fc2, fc3);
+
+impl MLP {
+    fn define(input, hidden, output) {
+        MLP(
+            Linear::define(input, hidden),
+            Linear::define(hidden, hidden),
+            Linear::define(hidden, output),
+        )
+    }
+
+    fn fill(x) {
+        MLP(
+            Linear::fill(x),
+            Linear::fill(x),
+            Linear::fill(x),
+        )
+    }
+
+    fn forward(self, x) {
+        x = self.fc1.forward(x);
+        x = std::nn::relu(x);
+        x = self.fc2.forward(x);
+        x = std::nn::relu(x);
+        x = self.fc3.forward(x);
+        x
+    }
+}
+
+// turn logits into probabilities
+fn softmax(x) {
+    exp = std::nn::exp(x);
+    lower = std::nn::sum(exp, [1], true);
+    exp / lower
+}
+
+// cross-entropy loss
+fn loss(prediected, label) {
+    inner = std::nn::ln(prediected) * label;
+    sum = std::nn::sum(inner, [1], false);
+    -std::nn::mean(sum, [0], false)
+}
+
+// iris flower classification
+fn main(args) {
+    // define the shapes of the model parameters
+    definition = MLP::define(4, 32, 3);
+
+    // learning rate, will need this later
+    lr = std::nn::tensor(0.01);
+    multiplier = MLP::fill(lr);
+
+    // both have the same group type as definition, but internally are filled with different values
+    // indices: unique integer identifiers for backpropagation to track which tensor corresponds to which parameter
+    // inference: tensors that match the shapes in definition using kaiming initialization
+    (indices, inference) = std::nn::init(definition);
+    (feature, label) = iris();
+
+    // the computation graph can be dynamically constructed, but it's is immutable and purely functional
+    // the grad is stored outside the graph, and connected via unique indices which is different from torch
+    for i in std::utils::range(1, 101) {
+        // attach the indices to the inference tensors to make them learnable
+        learnable = std::nn::attach(indices, inference);
+
+        logits = learnable.forward(feature);
+        prob = softmax(logits);
+        loss = loss(prob, label);
+
+        // grad has the same group type as definition, but filled with the gradients
+        grad = std::nn::backward(indices, loss);
+
+        // a very simple gradient descent optimizer
+        // note that arithmetic operations applied to groups are done element-wisely
+        inference -= multiplier * grad;
+
+        if i <= 5 or i % 20 == 0 {
+            std::io::print("epoch", i, ":", loss);
+        }
+    }
+
+    (feature, label) = test();
+    logits = inference.forward(feature);
+    prob = softmax(logits);
+
+    std::io::print(label);
+    std::io::print(prob);
+
+    "Fisher, R. (1936). Iris [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C56C76."
+}
+
+fn iris() {
+    feature = std::nn::tensor([
+        [5.5, 2.3, 4.0, 1.3],
+        [6.2, 2.2, 4.5, 1.5],
+        [6.3, 3.3, 4.7, 1.6],
+        [5.3, 3.7, 1.5, 0.2],
+        [5.1, 2.5, 3.0, 1.1],
+        [5.5, 4.2, 1.4, 0.2],
+        [6.0, 2.2, 4.0, 1.0],
+        [5.4, 3.9, 1.3, 0.4],
+        [4.5, 2.3, 1.3, 0.3],
+        [5.6, 2.9, 3.6, 1.3],
+        [7.1, 3.0, 5.9, 2.1],
+        [6.4, 2.9, 4.3, 1.3],
+        [5.4, 3.9, 1.7, 0.4],
+        [5.0, 3.4, 1.5, 0.2],
+        [5.1, 3.7, 1.5, 0.4],
+        [6.3, 2.7, 4.9, 1.8],
+        [6.1, 3.0, 4.6, 1.4],
+        [5.7, 2.8, 4.1, 1.3],
+        [5.8, 2.7, 5.1, 1.9],
+        [6.7, 3.3, 5.7, 2.5],
+        [6.3, 2.9, 5.6, 1.8],
+        [5.0, 2.0, 3.5, 1.0],
+        [5.1, 3.3, 1.7, 0.5],
+        [4.9, 3.1, 1.5, 0.1],
+        [5.4, 3.7, 1.5, 0.2],
+        [5.6, 2.7, 4.2, 1.3],
+        [5.9, 3.0, 5.1, 1.8],
+        [6.2, 2.8, 4.8, 1.8],
+        [7.2, 3.0, 5.8, 1.6],
+        [5.4, 3.0, 4.5, 1.5],
+        [6.7, 3.0, 5.0, 1.7],
+        [5.2, 2.7, 3.9, 1.4],
+        [5.0, 2.3, 3.3, 1.0],
+        [5.0, 3.4, 1.6, 0.4],
+        [6.5, 3.0, 5.8, 2.2],
+        [6.5, 3.2, 5.1, 2.0],
+        [7.4, 2.8, 6.1, 1.9],
+        [5.9, 3.2, 4.8, 1.8],
+        [6.4, 2.8, 5.6, 2.1],
+        [6.9, 3.1, 4.9, 1.5],
+        [6.4, 2.7, 5.3, 1.9],
+        [5.0, 3.2, 1.2, 0.2],
+        [6.5, 2.8, 4.6, 1.5],
+        [6.6, 2.9, 4.6, 1.3],
+        [6.5, 3.0, 5.5, 1.8],
+        [7.2, 3.2, 6.0, 1.8],
+        [5.7, 3.8, 1.7, 0.3],
+        [4.6, 3.6, 1.0, 0.2],
+        [6.4, 3.2, 4.5, 1.5],
+        [6.1, 2.6, 5.6, 1.4],
+        [6.9, 3.1, 5.1, 2.3],
+        [6.3, 2.5, 4.9, 1.5],
+        [7.9, 3.8, 6.4, 2.0],
+        [5.2, 3.4, 1.4, 0.2],
+        [7.7, 2.8, 6.7, 2.0],
+        [7.6, 3.0, 6.6, 2.1],
+        [5.0, 3.0, 1.6, 0.2],
+        [6.0, 3.0, 4.8, 1.8],
+        [5.8, 2.7, 4.1, 1.0],
+        [4.9, 3.0, 1.4, 0.2],
+        [6.1, 2.8, 4.0, 1.3],
+        [6.3, 2.3, 4.4, 1.3],
+        [4.8, 3.4, 1.9, 0.2],
+        [6.3, 2.8, 5.1, 1.5],
+        [6.7, 3.3, 5.7, 2.1],
+        [4.4, 3.2, 1.3, 0.2],
+        [6.4, 3.1, 5.5, 1.8],
+        [5.0, 3.5, 1.3, 0.3],
+        [5.0, 3.3, 1.4, 0.2],
+        [6.5, 3.0, 5.2, 2.0],
+        [6.9, 3.2, 5.7, 2.3],
+        [5.2, 4.1, 1.5, 0.1],
+        [4.9, 3.1, 1.5, 0.1],
+        [5.8, 2.7, 3.9, 1.2],
+        [4.7, 3.2, 1.6, 0.2],
+        [6.0, 2.7, 5.1, 1.6],
+        [4.8, 3.1, 1.6, 0.2],
+        [6.1, 2.8, 4.7, 1.2],
+        [5.7, 2.5, 5.0, 2.0],
+        [6.1, 3.0, 4.9, 1.8],
+        [5.7, 3.0, 4.2, 1.2],
+        [5.7, 4.4, 1.5, 0.4],
+        [6.9, 3.1, 5.4, 2.1],
+        [5.9, 3.0, 4.2, 1.5],
+        [5.8, 2.7, 5.1, 1.9],
+        [6.2, 3.4, 5.4, 2.3],
+        [5.0, 3.5, 1.6, 0.6],
+        [5.5, 2.4, 3.7, 1.0],
+        [5.0, 3.6, 1.4, 0.2],
+        [6.7, 2.5, 5.8, 1.8],
+        [5.7, 2.8, 4.5, 1.3],
+        [5.4, 3.4, 1.5, 0.4],
+        [5.8, 4.0, 1.2, 0.2],
+        [5.4, 3.4, 1.7, 0.2],
+        [7.2, 3.6, 6.1, 2.5],
+        [4.9, 3.1, 1.5, 0.1],
+        [4.6, 3.1, 1.5, 0.2],
+        [6.2, 2.9, 4.3, 1.3],
+        [6.0, 3.4, 4.5, 1.6],
+        [5.6, 3.0, 4.5, 1.5],
+        [6.8, 3.0, 5.5, 2.1],
+        [4.4, 3.0, 1.3, 0.2],
+        [6.3, 3.3, 6.0, 2.5],
+        [5.5, 2.6, 4.4, 1.2],
+        [5.8, 2.8, 5.1, 2.4],
+        [5.1, 3.5, 1.4, 0.2],
+        [5.7, 2.9, 4.2, 1.3],
+        [7.3, 2.9, 6.3, 1.8],
+        [4.8, 3.0, 1.4, 0.3],
+        [4.8, 3.4, 1.6, 0.2],
+        [6.0, 2.2, 5.0, 1.5],
+        [6.3, 2.5, 5.0, 1.9],
+        [5.7, 2.6, 3.5, 1.0],
+        [7.7, 3.8, 6.7, 2.2],
+        [7.7, 3.0, 6.1, 2.3],
+        [6.7, 3.1, 4.7, 1.5],
+        [6.8, 3.2, 5.9, 2.3],
+        [6.7, 3.0, 5.2, 2.3],
+        [6.4, 2.8, 5.6, 2.2],
+        [5.6, 2.5, 3.9, 1.1],
+        [6.6, 3.0, 4.4, 1.4],
+        [5.5, 2.5, 4.0, 1.3],
+        [6.4, 3.2, 5.3, 2.3],
+        [5.2, 3.5, 1.5, 0.2],
+        [5.5, 2.4, 3.8, 1.1],
+        [5.1, 3.8, 1.9, 0.4],
+        [6.8, 2.8, 4.8, 1.4],
+        [4.6, 3.2, 1.4, 0.2],
+        [5.1, 3.5, 1.4, 0.3],
+        [6.7, 3.1, 5.6, 2.4],
+        [7.7, 2.6, 6.9, 2.3],
+        [5.6, 2.8, 4.9, 2.0],
+        [5.1, 3.4, 1.5, 0.2],
+        [6.0, 2.9, 4.5, 1.5],
+        [5.8, 2.6, 4.0, 1.2],
+        [6.7, 3.1, 4.4, 1.4],
+        [6.3, 3.4, 5.6, 2.4],
+        [4.9, 2.4, 3.3, 1.0],
+        [4.9, 2.5, 4.5, 1.7],
+        [4.7, 3.2, 1.3, 0.2],
+        [4.6, 3.4, 1.4, 0.3],
+        [5.1, 3.8, 1.6, 0.2],
+        [5.1, 3.8, 1.5, 0.3],
+        [4.8, 3.0, 1.4, 0.1],
+        [4.3, 3.0, 1.1, 0.1],
+    ]);
+
+    label = std::nn::tensor([
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ]);
+
+    (feature, label)
+}
+
+fn test() {
+    feature = std::nn::tensor([
+        [5.5, 3.5, 1.3, 0.2],
+        [7.0, 3.2, 4.7, 1.4],
+        [5.6, 3.0, 4.1, 1.3],
+        [4.4, 2.9, 1.4, 0.2],
+        [6.1, 2.9, 4.7, 1.4],
+    ]);
+
+    label = std::nn::tensor([
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ]);
+
+    (feature, label)
+}
+`;
+
+const hoyoverse = `fn talk(name, to) {
+    msg = if name == "Pardofelis" and to == "Mei" {
+        "芽衣姐……我……不想死……"
+    } else if name == "Focalors" and to == "Neuvillette" {
+        "再见纳维莱特，希望你喜欢这五百年来属于你的戏份。"
+    } else if name == "Acheron" {
+        "我为逝者哀哭……暮雨，终将落下。"
+    } else if name == "Astra" {
+        "唱著跳著説著，細心編寫遊歷過程，太動聽～"
+    } else {
+        "Hello, " + to
+    };
+    name + ": " + msg
+}
+
+fn main(args) {
+    people = [
+        ("Pardofelis", "Mei"),
+        ("Focalors", "Neuvillette"),
+        ("Acheron", "IX"),
+        ("Astra", "Evelyn"),
+        ("John Doe", "Jane Doe"),
+    ];
+
+    for (name, to) in people {
+        msg = talk(name, to);
+        std::io::print(msg);
+    }
+    
+    std::pink::felysneko()
+}
+`;
+
+const beloved = `// A Programming Language Because of Elysia and Cyrene.
+// 因爱莉希雅与昔涟而存在的编程语言，整个项目的意义仅是为了以下彩蛋。
+fn main(args) {
+    elysia = std::pink::elysia();
+    cyrene = std::pink::cyrene();
+    std::io::print("To beloved", elysia, "and", cyrene);
+    "jonny.jin@uwaterloo.ca"
+}
+`;
+
+const playground = `// here's your playground
+fn main(args) {
+    0
+}
+`;
+
+export type Codebase = {
+  cursor: number;
+  programs: {
+    name: string;
+    code: string;
+    binary: Uint8Array | undefined;
+    outcome: Outcome | undefined;
+  }[];
+};
+
+export type Outcome = {
+  stdout: string;
+  result: string;
+  success: boolean;
+};
+
+export const CODEBASE: Codebase = {
+  cursor: 0,
+  programs: [
+    {
+      name: "quickstart.fs",
+      code: quickstart,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "grouping.fs",
+      code: grouping,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "fibonacci.fs",
+      code: fibonacci,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "autograd.fs",
+      code: autograd,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "hoyoverse.fs",
+      code: hoyoverse,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "beloved.fs",
+      code: beloved,
+      binary: undefined,
+      outcome: undefined,
+    },
+    {
+      name: "playground.fs",
+      code: playground,
+      binary: undefined,
+      outcome: undefined,
+    },
+  ],
+};
