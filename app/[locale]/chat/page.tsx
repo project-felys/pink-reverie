@@ -202,6 +202,9 @@ export default function Chat() {
             pointerEvents: isMovieMode ? "none" : "auto",
           }}
         >
+          <p className="w-full md:w-3/4 xl:w-3/5 text-neutral-300">
+            {configText.disclaimer}
+          </p>
           {messages.map((message, index) =>
             message.content.split("\n").map((line, subIndex) => (
               <li

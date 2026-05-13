@@ -179,7 +179,7 @@ export default function Compiler() {
         <div className="h-full flex items-center justify-center">
           <ul className="max-h-2/3 w-full flex flex-col items-center space-y-4 overflow-auto">
             {codebase.programs.map((value, key) => (
-              <li key={key} className="w-64 text-lgfont-bold text-neutral-300">
+              <li key={key} className="w-64 text-lg font-bold text-neutral-300">
                 <button
                   className={`p-2 w-full  border-neutral-800 border-x-3 ${
                     codebase.cursor === key
